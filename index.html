@@ -5,35 +5,229 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>StakeBounce</title>
     <style>
-        body { margin: 0; background: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; color: #333; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { 
+            margin: 0; background: #fff; font-family: 'Segoe UI', sans-serif; 
+            overflow: hidden; touch-action: none; position: fixed; width: 100%; height: 100%;
+        }
         #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-        .stat-box { background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 15px; border: 1px solid #3498db; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-        #bonusTimer { height: 4px; background: #3498db; width: 0%; margin-top: 5px; transition: width 0.1s linear; }
+        .stat-box { 
+            background: rgba(255,255,255,0.9); padding: 8px 20px; border-radius: 15px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: inline-block; border: 1px solid #eee;
+        }
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; transition: opacity 1s; z-index: 100;
+            display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 24px;
+        }
         canvas { display: block; }
-        #start-hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #aaa; font-size: 12px; }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <div class="stat-box">
-        <div style="color: #333">Уровень: <span id="levelDisplay">1</span> | <span id="bonusStatus" style="color:#3498db">НОРМА</span></div>
-        <div id="bonusTimer"></div>
-    </div>
-</div>
-<div id="start-hint">Нажми на экран для музыки</div>
+<div id="ui"><div class="stat-box"><span id="status-text">ТАКТИЧЕСКИЙ РЕЖИМ</span></div></div>
+<div id="overlay">МИР ПЕРЕЗАГРУЖАЕТСЯ...</div>
 <canvas id="gameCanvas"></canvas>
 
 <script>
+/** * КОНФИГ ИГРЫ
+ */
+const CONFIG = {
+    troopSpeed: 4,             // СКОРОСТЬ СОЛДАТ (Сделано в 2 раза меньше)
+    aiAttackInterval: 700,      // Частота принятия решений ИИ (мс)
+    aiAttackChance: 0.6,       // Агрессивность ботов (0.0 - 1.0)
+    baseRegenSpeed: 800,       // Базовая скорость прироста воинов (мс)
+    captureBonus: 12,          // Мгновенные воины при захвате
+    stagnationThreshold: 0.85, // Лимит захвата карты до рестарта
+    maxTroopsOnBase: 75        // Лимит 75 (перегрев)
+};
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const levelDisplay = document.getElementById('levelDisplay');
-const bonusTimerBar = document.getElementById('bonusTimer');
-const bonusStatus = document.getElementById('bonusStatus');
+const overlay = document.getElementById('overlay');
+const statusText = document.getElementById('status-text');
 
-let width, height, nodes = [], particles = [], anomalies = [];
+let width, height, nodes = [], particles = [];
 let selectedNode = null, touchPos = null;
-let gameLevel = 1, playerBonusTime = 0;
+let teamBoosts = {}, isRestarting = false;
+
+const COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+const NEUTRAL = '#f1f2f6';
+
+class Node {
+    constructor(x, y, team, val = 30) {
+        this.x = x; this.y = y; this.team = team; this.value = val;
+        this.lastRegen = Date.now();
+        this.overloadStart = 0;
+        this.isDying = false;
+    }
+    get radius() { return 22 + Math.sqrt(Math.max(0, this.value)) * 3.5; }
+    update() {
+        if (this.isDying) return;
+        if (this.value >= CONFIG.maxTroopsOnBase) {
+            if (!this.overloadStart) this.overloadStart = Date.now();
+            if (Date.now() - this.overloadStart > 3000) {
+                this.isDying = true;
+                setTimeout(() => nodes = nodes.filter(n => n !== this), 500);
+            }
+        } else this.overloadStart = 0;
+
+        if (this.team === -1) return;
+        let speed = CONFIG.baseRegenSpeed;
+        if (teamBoosts[this.team] > Date.now()) speed /= 2;
+        if (Date.now() - this.lastRegen > speed) {
+            this.value++; this.lastRegen = Date.now();
+        }
+    }
+    draw() {
+        let r = this.radius;
+        ctx.save();
+        if (this.overloadStart) {
+            ctx.shadowBlur = 20; ctx.shadowColor = '#ff4757';
+            ctx.translate(Math.random()*2-1, Math.random()*2-1);
+        }
+        ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI*2);
+        ctx.fillStyle = this.team === -1 ? NEUTRAL : COLORS[this.team % COLORS.length];
+        ctx.fill();
+        ctx.strokeStyle = (selectedNode === this) ? '#333' : 'white';
+        ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = this.team === -1 ? '#aaa' : 'white';
+        ctx.font = `bold ${Math.floor(r * 0.5)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.floor(this.value), this.x, this.y + (r * 0.18));
+        ctx.restore();
+    }
+}
+
+class Particle {
+    constructor(x, y, target, team) {
+        this.x = x; this.y = y; this.target = target; this.team = team;
+    }
+    update() {
+        let dx = this.target.x - this.x, dy = this.target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < this.target.radius) {
+            if (this.target.team === this.team) this.target.value++;
+            else {
+                this.target.value--;
+                if (this.target.value <= 0) {
+                    this.target.team = this.team;
+                    this.target.value = CONFIG.captureBonus;
+                    teamBoosts[this.team] = Date.now() + 3000;
+                }
+            }
+            return false;
+        }
+        this.x += (dx/dist) * CONFIG.troopSpeed;
+        this.y += (dy/dist) * CONFIG.troopSpeed;
+        return true;
+    }
+    draw() {
+        ctx.beginPath(); ctx.arc(this.x, this.y, 4, 0, Math.PI*2);
+        ctx.fillStyle = COLORS[this.team % COLORS.length]; ctx.fill();
+    }
+}
+
+function init() {
+    isRestarting = false;
+    overlay.style.opacity = 0;
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    nodes = []; particles = [];
+    for(let i=0; i<7; i++) spawnBase(i);
+    for(let i=0; i<4; i++) spawnBase(-1);
+}
+
+function spawnBase(teamId) {
+    let x, y, tooClose, attempts = 0;
+    do {
+        x = 60 + Math.random() * (width - 120);
+        y = 100 + Math.random() * (height - 200);
+        tooClose = nodes.some(n => Math.hypot(n.x - x, n.y - y) < 100);
+        attempts++;
+    } while (tooClose && attempts < 50);
+    nodes.push(new Node(x, y, teamId, teamId === -1 ? 15 : 30));
+}
+
+function restartGame() {
+    if (isRestarting) return;
+    isRestarting = true;
+    overlay.style.opacity = 1;
+    setTimeout(init, 1500);
+}
+
+setInterval(() => {
+    if (isRestarting) return;
+    
+    // Проверка на застой
+    let totalNodes = nodes.length;
+    let counts = COLORS.map((_, i) => nodes.filter(n => n.team === i).length);
+    let maxDominance = Math.max(...counts) / totalNodes;
+    if (maxDominance >= CONFIG.stagnationThreshold) { restartGame(); return; }
+
+    // Возрождение фракций
+    for(let i=0; i<7; i++) if (nodes.filter(n => n.team === i).length === 0) spawnBase(i);
+
+    // Логика ИИ
+    COLORS.forEach((_, id) => {
+        if (id === 0) return;
+        const myNodes = nodes.filter(n => n.team === id);
+        myNodes.forEach(src => {
+            if (src.value > 20 && Math.random() < CONFIG.aiAttackChance) {
+                let targets = nodes.filter(n => n.team !== id);
+                let target = targets[Math.floor(Math.random() * targets.length)];
+                if (target) sendTroops(src, target);
+            }
+        });
+    });
+}, CONFIG.aiAttackInterval);
+
+function sendTroops(src, target) {
+    if (src === target || src.isDying) return;
+    let amt = Math.floor(src.value * 0.6);
+    src.value -= amt;
+    for(let i=0; i<amt; i++) {
+        setTimeout(() => {
+            if (!target.isDying) particles.push(new Particle(src.x, src.y, target, src.team));
+        }, i * 35);
+    }
+}
+
+function gameLoop() {
+    ctx.clearRect(0, 0, width, height);
+    if (selectedNode && touchPos) {
+        ctx.beginPath(); ctx.moveTo(selectedNode.x, selectedNode.y);
+        ctx.lineTo(touchPos.x, touchPos.y);
+        ctx.strokeStyle = COLORS[selectedNode.team]; ctx.lineWidth = 4; ctx.globalAlpha = 0.2; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    nodes.forEach(n => { n.update(); n.draw(); });
+    particles = particles.filter(p => { p.draw(); return p.update(); });
+    requestAnimationFrame(gameLoop);
+}
+
+const getPos = (e) => {
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+};
+canvas.addEventListener('touchstart', (e) => { 
+    e.preventDefault(); 
+    const p = getPos(e);
+    let clicked = nodes.find(n => Math.hypot(n.x - p.x, n.y - p.y) < n.radius + 20);
+    if (clicked && clicked.team === 0) selectedNode = clicked;
+});
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); touchPos = getPos(e); });
+canvas.addEventListener('touchend', () => {
+    if (selectedNode && touchPos) {
+        let target = nodes.find(n => Math.hypot(n.x - touchPos.x, n.y - touchPos.y) < n.radius + 30);
+        if (target && target !== selectedNode) sendTroops(selectedNode, target);
+    }
+    selectedNode = null; touchPos = null;
+});
+
+init(); gameLoop();
+</script>
+</body>
+</html>
 let audioCtx = null;
 
 const TEAM_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
