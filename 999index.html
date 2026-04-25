@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StakeBounce</title>
+    <style>
+        body { margin: 0; background: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; color: #333; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        .stat-box { background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 15px; border: 1px solid #3498db; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        #bonusTimer { height: 4px; background: #3498db; width: 0%; margin-top: 5px; transition: width 0.1s linear; }
+        canvas { display: block; }
+        #start-hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #aaa; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="stat-box">
+        <div style="color: #333">Уровень: <span id="levelDisplay">1</span> | <span id="bonusStatus" style="color:#3498db">НОРМА</span></div>
+        <div id="bonusTimer"></div>
+    </div>
+</div>
+<div id="start-hint">Нажми на экран для музыки</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const levelDisplay = document.getElementById('levelDisplay');
+const bonusTimerBar = document.getElementById('bonusTimer');
+const bonusStatus = document.getElementById('bonusStatus');
+
+let width, height, nodes = [], particles = [], anomalies = [];
+let selectedNode = null, touchPos = null;
+let gameLevel = 1, playerBonusTime = 0;
+let audioCtx = null;
+
+const TEAM_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
+const NEUTRAL_COLOR = '#dfe6e9';
+
+// --- Звуковой движок ---
+function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Фоновая мелодия (спокойная)
+    setInterval(() => {
+        if (Math.random() > 0.7) playTone(220 * Math.pow(1.06, Math.floor(Math.random()*12)), 'triangle', 1.5, 0.03);
+    }, 3000);
+    document.getElementById('start-hint').style.display = 'none';
+}
+
+function playTone(freq, type, duration, vol) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+class Node {
+    constructor(x, y, teamIndex, value = 15) {
+        this.x = x; this.y = y; this.team = teamIndex; 
+        this.value = value; this.radius = 28; this.lastRegen = Date.now();
+    }
+    update() {
+        if (this.team === -1) return;
+        let now = Date.now();
+        let baseSpeed = (this.team === 0) ? 1000 : Math.max(150, 850 - (gameLevel * 30));
+        if (this.team === 0 && now < playerBonusTime) baseSpeed /= 2; 
+        if (now - this.lastRegen > baseSpeed) {
+            if (this.value < 100) this.value++;
+            this.lastRegen = now;
+        }
+    }
+    draw() {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.team === -1 ? NEUTRAL_COLOR : TEAM_COLORS[this.team % TEAM_COLORS.length];
+        if (this.team === 0 && Date.now() < playerBonusTime) {
+            ctx.shadowBlur = 20; ctx.shadowColor = '#3498db';
+        }
+        ctx.fill();
+        ctx.strokeStyle = (selectedNode === this) ? '#333' : 'rgba(0,0,0,0.05)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = this.team === -1 ? '#636e72' : 'white';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.floor(this.value), this.x, this.y + 6);
+    }
+}
+
+class Anomaly {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.radius = 45;
+        this.life = Date.now() + 8000;
+        this.angle = 0;
+    }
+    draw() {
+        this.angle += 0.05;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.strokeStyle = '#2d3436';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 10]);
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * (0.8 + Math.sin(this.angle)*0.2), 0, Math.PI*2);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+class Particle {
+    constructor(x, y, target, teamIndex) {
+        this.x = x; this.y = y; this.target = target;
+        this.team = teamIndex; this.speed = 4;
+    }
+    update() {
+        for(let a of anomalies) {
+            if(Math.hypot(this.x - a.x, this.y - a.y) < a.radius) return false;
+        }
+        const dx = this.target.x - this.x, dy = this.target.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 5) { this.reach(); return false; }
+        this.x += (dx/dist) * this.speed;
+        this.y += (dy/dist) * this.speed;
+        return true;
+    }
+    reach() {
+        if (this.target.team === this.team) this.target.value++;
+        else {
+            this.target.value--;
+            if (this.target.value <= 0) {
+                if (this.team === 0) {
+                    playerBonusTime = Date.now() + 5000;
+                    playTone(523, 'sine', 0.2, 0.1); // Звук успеха
+                }
+                this.target.team = this.team; this.target.value = 10;
+            }
+        }
+    }
+    draw() {
+        ctx.beginPath(); ctx.arc(this.x, this.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = TEAM_COLORS[this.team % TEAM_COLORS.length]; ctx.fill();
+    }
+}
+
+function spawnSmartEnemy() {
+    let x, y, tooClose, attempts = 0;
+    do {
+        x = 50 + Math.random() * (width - 100);
+        y = 100 + Math.random() * (height - 200);
+        tooClose = nodes.some(n => Math.hypot(x-n.x, y-n.y) < 90);
+        attempts++;
+    } while (tooClose && attempts < 50);
+
+    if (!tooClose) {
+        const playerTotal = nodes.filter(n => n.team === 0).reduce((s, n) => s + n.value, 0);
+        const activeTeams = new Set(nodes.filter(n => n.team > 0).map(n => n.team));
+        let nextId = 1; while(activeTeams.has(nextId)) nextId++;
+        let startVal = nodes.filter(n => n.team === 0).length > 2 ? Math.floor(playerTotal * 0.7) : 20;
+        nodes.push(new Node(x, y, nextId, Math.max(20, startVal)));
+    }
+}
+
+function init() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    nodes = [new Node(width/2, height - 120, 0, 30)];
+    for(let i=0; i<4; i++) spawnNode(-1);
+    spawnSmartEnemy();
+}
+
+function spawnNode(team) {
+    let x = 50 + Math.random()*(width-100), y = 100 + Math.random()*(height-200);
+    if(!nodes.some(n => Math.hypot(x-n.x, y-n.y) < 85)) nodes.push(new Node(x, y, team, 10));
+}
+
+setInterval(() => { anomalies.push(new Anomaly(Math.random()*width, Math.random()*height)); }, 14000);
+setInterval(() => { if(nodes.filter(n=>n.team===-1).length < 5) spawnNode(-1); }, 7000);
+setInterval(() => { gameLevel++; levelDisplay.innerText = gameLevel; spawnSmartEnemy(); }, 10000);
+
+setInterval(() => {
+    const teams = [...new Set(nodes.map(n => n.team))].filter(t => t > 0);
+    teams.forEach(id => {
+        nodes.filter(n => n.team === id).forEach(src => {
+            if (src.value > 20) {
+                let targets = nodes.filter(n => n.team !== id);
+                targets.sort((a,b) => Math.hypot(a.x-src.x, a.y-src.y) - Math.hypot(b.x-src.x, b.y-src.y));
+                if (targets[0]) sendTroops(src, targets[0]);
+            }
+        });
+    });
+}, 2500);
+
+function sendTroops(from, to) {
+    let amount = Math.floor(from.value * 0.6); from.value -= amount;
+    if (from.team === 0) playTone(150, 'sine', 0.1, 0.05); // Звук запуска
+    for(let i=0; i<amount; i++) setTimeout(() => particles.push(new Particle(from.x, from.y, to, from.team)), i * 50);
+}
+
+function gameLoop() {
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+    
+    anomalies = anomalies.filter(a => {
+        if(Date.now() < a.life) { a.draw(); return true; }
+        return false;
+    });
+
+    let remaining = playerBonusTime - Date.now();
+    if (remaining > 0) {
+        bonusTimerBar.style.width = (remaining / 5000 * 100) + "%";
+        bonusStatus.innerText = "X2 СКОРОСТЬ";
+    } else {
+        bonusTimerBar.style.width = "0%";
+        bonusStatus.innerText = "НОРМА";
+    }
+
+    if (selectedNode && touchPos) {
+        ctx.beginPath(); ctx.moveTo(selectedNode.x, selectedNode.y);
+        ctx.lineTo(touchPos.x, touchPos.y);
+        ctx.strokeStyle = '#3498db'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    nodes.forEach(n => { n.update(); n.draw(); });
+    particles = particles.filter(p => { p.draw(); return p.update(); });
+    requestAnimationFrame(gameLoop);
+}
+
+const getPos = (e) => {
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+};
+canvas.onmousedown = canvas.ontouchstart = (e) => {
+    initAudio();
+    const p = getPos(e);
+    nodes.forEach(n => { if (Math.hypot(p.x-n.x, p.y-n.y) < n.radius + 15 && n.team === 0) selectedNode = n; });
+};
+window.onmousemove = window.ontouchmove = (e) => { if (selectedNode) touchPos = getPos(e); };
+window.onmouseup = window.ontouchend = (e) => {
+    if (selectedNode && touchPos) nodes.forEach(n => { if (Math.hypot(touchPos.x-n.x, touchPos.y-n.y) < n.radius + 15) sendTroops(selectedNode, n); });
+    selectedNode = null; touchPos = null;
+};
+init(); gameLoop();
+</script>
+</body>
+</html>
+
