@@ -25,27 +25,62 @@
 </head>
 <body>
 
-<div id="ui"><div class="stat-box"><span id="status-text">ТАКТИЧЕСКИЙ РЕЖИМ</span></div></div>
+<div id="ui"><div class="stat-box"><span id="status-text">AUDIO ACTIVE</span></div></div>
 <div id="overlay">МИР ПЕРЕЗАГРУЖАЕТСЯ...</div>
 <canvas id="gameCanvas"></canvas>
 
 <script>
-/** * КОНФИГ ИГРЫ
- */
 const CONFIG = {
-    troopSpeed: 4,             // СКОРОСТЬ СОЛДАТ (Сделано в 2 раза меньше)
-    aiAttackInterval: 700,      // Частота принятия решений ИИ (мс)
-    aiAttackChance: 0.6,       // Агрессивность ботов (0.0 - 1.0)
-    baseRegenSpeed: 800,       // Базовая скорость прироста воинов (мс)
-    captureBonus: 12,          // Мгновенные воины при захвате
-    stagnationThreshold: 0.85, // Лимит захвата карты до рестарта
-    maxTroopsOnBase: 75        // Лимит 75 (перегрев)
+    troopSpeed: 4,
+    aiAttackInterval: 700,
+    aiAttackChance: 0.6,
+    baseRegenSpeed: 800,
+    captureBonus: 12,
+    stagnationThreshold: 0.85,
+    maxTroopsOnBase: 75
+};
+
+// --- ЗВУКОВОЙ ДВИЖОК ---
+const AudioEngine = {
+    ctx: null,
+    init() {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    },
+    play(freq, type, duration, vol) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    },
+    click() { this.play(440, 'sine', 0.1, 0.1); },
+    send() { this.play(150, 'triangle', 0.2, 0.05); },
+    capture() { this.play(880, 'sine', 0.3, 0.1); },
+    boom() { this.play(60, 'sawtooth', 0.8, 0.15); },
+    restart() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 1.5);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1.5);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 1.5);
+    }
 };
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
-const statusText = document.getElementById('status-text');
 
 let width, height, nodes = [], particles = [];
 let selectedNode = null, touchPos = null;
@@ -68,6 +103,7 @@ class Node {
             if (!this.overloadStart) this.overloadStart = Date.now();
             if (Date.now() - this.overloadStart > 3000) {
                 this.isDying = true;
+                AudioEngine.boom();
                 setTimeout(() => nodes = nodes.filter(n => n !== this), 500);
             }
         } else this.overloadStart = 0;
@@ -114,6 +150,7 @@ class Particle {
                     this.target.team = this.team;
                     this.target.value = CONFIG.captureBonus;
                     teamBoosts[this.team] = Date.now() + 3000;
+                    AudioEngine.capture();
                 }
             }
             return false;
@@ -153,22 +190,16 @@ function restartGame() {
     if (isRestarting) return;
     isRestarting = true;
     overlay.style.opacity = 1;
+    AudioEngine.restart();
     setTimeout(init, 1500);
 }
 
 setInterval(() => {
     if (isRestarting) return;
-    
-    // Проверка на застой
-    let totalNodes = nodes.length;
     let counts = COLORS.map((_, i) => nodes.filter(n => n.team === i).length);
-    let maxDominance = Math.max(...counts) / totalNodes;
-    if (maxDominance >= CONFIG.stagnationThreshold) { restartGame(); return; }
-
-    // Возрождение фракций
+    if (Math.max(...counts) / nodes.length >= CONFIG.stagnationThreshold) { restartGame(); return; }
     for(let i=0; i<7; i++) if (nodes.filter(n => n.team === i).length === 0) spawnBase(i);
 
-    // Логика ИИ
     COLORS.forEach((_, id) => {
         if (id === 0) return;
         const myNodes = nodes.filter(n => n.team === id);
@@ -186,6 +217,7 @@ function sendTroops(src, target) {
     if (src === target || src.isDying) return;
     let amt = Math.floor(src.value * 0.6);
     src.value -= amt;
+    AudioEngine.send();
     for(let i=0; i<amt; i++) {
         setTimeout(() => {
             if (!target.isDying) particles.push(new Particle(src.x, src.y, target, src.team));
@@ -209,11 +241,16 @@ const getPos = (e) => {
     const t = e.touches ? e.touches[0] : e;
     return { x: t.clientX, y: t.clientY };
 };
+
 canvas.addEventListener('touchstart', (e) => { 
     e.preventDefault(); 
+    AudioEngine.init();
     const p = getPos(e);
     let clicked = nodes.find(n => Math.hypot(n.x - p.x, n.y - p.y) < n.radius + 20);
-    if (clicked && clicked.team === 0) selectedNode = clicked;
+    if (clicked && clicked.team === 0) {
+        selectedNode = clicked;
+        AudioEngine.click();
+    }
 });
 canvas.addEventListener('touchmove', (e) => { e.preventDefault(); touchPos = getPos(e); });
 canvas.addEventListener('touchend', () => {
@@ -228,46 +265,7 @@ init(); gameLoop();
 </script>
 </body>
 </html>
-let audioCtx = null;
-
-const TEAM_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
-const NEUTRAL_COLOR = '#dfe6e9';
-
-// --- Звуковой движок ---
-function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Фоновая мелодия (спокойная)
-    setInterval(() => {
-        if (Math.random() > 0.7) playTone(220 * Math.pow(1.06, Math.floor(Math.random()*12)), 'triangle', 1.5, 0.03);
-    }, 3000);
-    document.getElementById('start-hint').style.display = 'none';
-}
-
-function playTone(freq, type, duration, vol) {
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + duration);
-}
-
-class Node {
-    constructor(x, y, teamIndex, value = 15) {
-        this.x = x; this.y = y; this.team = teamIndex; 
-        this.value = value; this.radius = 28; this.lastRegen = Date.now();
-    }
-    update() {
-        if (this.team === -1) return;
-        let now = Date.now();
-        let baseSpeed = (this.team === 0) ? 1000 : Math.max(150, 850 - (gameLevel * 30));
-        if (this.team === 0 && now < playerBonusTime) baseSpeed /= 2; 
+s.team === 0 && now < playerBonusTime) baseSpeed /= 2; 
         if (now - this.lastRegen > baseSpeed) {
             if (this.value < 100) this.value++;
             this.lastRegen = now;
