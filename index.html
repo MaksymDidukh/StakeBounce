@@ -6,451 +6,243 @@
     <title>StakeBounce</title>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { 
+        #v9k_wrapper { 
             margin: 0; background: #fff; font-family: 'Segoe UI', sans-serif; 
             overflow: hidden; touch-action: none; position: fixed; width: 100%; height: 100%;
+            top: 0; left: 0;
         }
-        #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-        .stat-box { 
+        #z2m_ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        .x7b_stat_box { 
             background: rgba(255,255,255,0.9); padding: 8px 20px; border-radius: 15px; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: inline-block; border: 1px solid #eee;
         }
-        #overlay {
+        #q4p_overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: white; opacity: 0; pointer-events: none; transition: opacity 1s; z-index: 100;
             display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 24px;
         }
-        canvas { display: block; }
+        #c1r_canvas { display: block; width: 100%; height: 100%; }
     </style>
 </head>
 <body>
 
-<div id="ui"><div class="stat-box"><span id="status-text">Strategy</span></div></div>
-<div id="overlay">THE WORLD IS REBOOTING...</div>
-<canvas id="gameCanvas"></canvas>
+<div id="v9k_wrapper">
+    <div id="z2m_ui"><div class="x7b_stat_box"><span id="l5s_status">Strategy</span></div></div>
+    <div id="q4p_overlay">THE WORLD IS REBOOTING...</div>
+    <canvas id="c1r_canvas"></canvas>
+</div>
 
 <script>
-const CONFIG = {
-    troopSpeed: 4,
-    aiAttackInterval: 700,
-    aiAttackChance: 0.6,
-    baseRegenSpeed: 800,
-    captureBonus: 12,
-    stagnationThreshold: 0.85,
-    maxTroopsOnBase: 75
-};
+(function() {
+    const _c_f_g = {
+        _s_p_d: 4,
+        _a_i_i: 700,
+        _a_i_c: 0.6,
+        _r_g_n: 800,
+        _c_p_b: 12,
+        _s_t_g: 0.85,
+        _m_x_t: 75
+    };
 
-// --- ЗВУКОВОЙ ДВИЖОК ---
-const AudioEngine = {
-    ctx: null,
-    init() {
-        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    },
-    play(freq, type, duration, vol) {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start();
-        osc.stop(this.ctx.currentTime + duration);
-    },
-    click() { this.play(440, 'sine', 0.1, 0.1); },
-    send() { this.play(150, 'triangle', 0.2, 0.05); },
-    capture() { this.play(880, 'sine', 0.3, 0.1); },
-    boom() { this.play(60, 'sawtooth', 0.8, 0.15); },
-    restart() {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.frequency.setValueAtTime(400, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 1.5);
-        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1.5);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 1.5);
-    }
-};
-
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const overlay = document.getElementById('overlay');
-
-let width, height, nodes = [], particles = [];
-let selectedNode = null, touchPos = null;
-let teamBoosts = {}, isRestarting = false;
-
-const COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-const NEUTRAL = '#f1f2f6';
-
-class Node {
-    constructor(x, y, team, val = 30) {
-        this.x = x; this.y = y; this.team = team; this.value = val;
-        this.lastRegen = Date.now();
-        this.overloadStart = 0;
-        this.isDying = false;
-    }
-    get radius() { return 22 + Math.sqrt(Math.max(0, this.value)) * 3.5; }
-    update() {
-        if (this.isDying) return;
-        if (this.value >= CONFIG.maxTroopsOnBase) {
-            if (!this.overloadStart) this.overloadStart = Date.now();
-            if (Date.now() - this.overloadStart > 3000) {
-                this.isDying = true;
-                AudioEngine.boom();
-                setTimeout(() => nodes = nodes.filter(n => n !== this), 500);
-            }
-        } else this.overloadStart = 0;
-
-        if (this.team === -1) return;
-        let speed = CONFIG.baseRegenSpeed;
-        if (teamBoosts[this.team] > Date.now()) speed /= 2;
-        if (Date.now() - this.lastRegen > speed) {
-            this.value++; this.lastRegen = Date.now();
+    const _A_u_d = {
+        _ctx: null,
+        init() { if (!this._ctx) this._ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+        play(f, t, d, v) {
+            if (!this._ctx) return;
+            const o = this._ctx.createOscillator();
+            const g = this._ctx.createGain();
+            o.type = t;
+            o.frequency.setValueAtTime(f, this._ctx.currentTime);
+            g.gain.setValueAtTime(v, this._ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, this._ctx.currentTime + d);
+            o.connect(g); g.connect(this._ctx.destination);
+            o.start(); o.stop(this._ctx.currentTime + d);
+        },
+        _cl: function() { this.play(440, 'sine', 0.1, 0.1); },
+        _sn: function() { this.play(150, 'triangle', 0.2, 0.05); },
+        _cp: function() { this.play(880, 'sine', 0.3, 0.1); },
+        _bm: function() { this.play(60, 'sawtooth', 0.8, 0.15); },
+        _rs: function() {
+            if (!this._ctx) return;
+            const o = this._ctx.createOscillator();
+            const g = this._ctx.createGain();
+            o.frequency.setValueAtTime(400, this._ctx.currentTime);
+            o.frequency.exponentialRampToValueAtTime(50, this._ctx.currentTime + 1.5);
+            g.gain.setValueAtTime(0.2, this._ctx.currentTime);
+            g.gain.linearRampToValueAtTime(0, this._ctx.currentTime + 1.5);
+            o.connect(g); g.connect(this._ctx.destination);
+            o.start(); o.stop(this._ctx.currentTime + 1.5);
         }
-    }
-    draw() {
-        let r = this.radius;
-        ctx.save();
-        if (this.overloadStart) {
-            ctx.shadowBlur = 20; ctx.shadowColor = '#ff4757';
-            ctx.translate(Math.random()*2-1, Math.random()*2-1);
-        }
-        ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI*2);
-        ctx.fillStyle = this.team === -1 ? NEUTRAL : COLORS[this.team % COLORS.length];
-        ctx.fill();
-        ctx.strokeStyle = (selectedNode === this) ? '#333' : 'white';
-        ctx.lineWidth = 3; ctx.stroke();
-        ctx.fillStyle = this.team === -1 ? '#aaa' : 'white';
-        ctx.font = `bold ${Math.floor(r * 0.5)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText(Math.floor(this.value), this.x, this.y + (r * 0.18));
-        ctx.restore();
-    }
-}
+    };
 
-class Particle {
-    constructor(x, y, target, team) {
-        this.x = x; this.y = y; this.target = target; this.team = team;
-    }
-    update() {
-        let dx = this.target.x - this.x, dy = this.target.y - this.y;
-        let dist = Math.hypot(dx, dy);
-        if (dist < this.target.radius) {
-            if (this.target.team === this.team) this.target.value++;
-            else {
-                this.target.value--;
-                if (this.target.value <= 0) {
-                    this.target.team = this.team;
-                    this.target.value = CONFIG.captureBonus;
-                    teamBoosts[this.team] = Date.now() + 3000;
-                    AudioEngine.capture();
+    const _cvs = document.getElementById('c1r_canvas');
+    const _ctx = _cvs.getContext('2d');
+    const _ovl = document.getElementById('q4p_overlay');
+
+    let _w, _h, _nds = [], _pts = [];
+    let _s_nd = null, _t_ps = null;
+    let _t_bs = {}, _is_r = false;
+
+    const _CLS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+    const _NEU = '#f1f2f6';
+
+    class _Node_X {
+        constructor(x, y, t, v = 30) {
+            this.x = x; this.y = y; this.team = t; this.val = v;
+            this.ls_r = Date.now(); this.ov_s = 0; this.is_d = false;
+        }
+        get rad() { return 22 + Math.sqrt(Math.max(0, this.val)) * 3.5; }
+        upd() {
+            if (this.is_d) return;
+            if (this.val >= _c_f_g._m_x_t) {
+                if (!this.ov_s) this.ov_s = Date.now();
+                if (Date.now() - this.ov_s > 3000) {
+                    this.is_d = true; _A_u_d._bm();
+                    setTimeout(() => _nds = _nds.filter(n => n !== this), 500);
                 }
+            } else this.ov_s = 0;
+
+            if (this.team === -1) return;
+            let s = _c_f_g._r_g_n;
+            if (_t_bs[this.team] > Date.now()) s /= 2;
+            if (Date.now() - this.ls_r > s) { this.val++; this.ls_r = Date.now(); }
+        }
+        drw() {
+            let r = this.rad;
+            _ctx.save();
+            if (this.ov_s) {
+                _ctx.shadowBlur = 20; _ctx.shadowColor = '#ff4757';
+                _ctx.translate(Math.random()*2-1, Math.random()*2-1);
             }
-            return false;
-        }
-        this.x += (dx/dist) * CONFIG.troopSpeed;
-        this.y += (dy/dist) * CONFIG.troopSpeed;
-        return true;
-    }
-    draw() {
-        ctx.beginPath(); ctx.arc(this.x, this.y, 4, 0, Math.PI*2);
-        ctx.fillStyle = COLORS[this.team % COLORS.length]; ctx.fill();
-    }
-}
-
-function init() {
-    isRestarting = false;
-    overlay.style.opacity = 0;
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    nodes = []; particles = [];
-    for(let i=0; i<7; i++) spawnBase(i);
-    for(let i=0; i<4; i++) spawnBase(-1);
-}
-
-function spawnBase(teamId) {
-    let x, y, tooClose, attempts = 0;
-    do {
-        x = 60 + Math.random() * (width - 120);
-        y = 100 + Math.random() * (height - 200);
-        tooClose = nodes.some(n => Math.hypot(n.x - x, n.y - y) < 100);
-        attempts++;
-    } while (tooClose && attempts < 50);
-    nodes.push(new Node(x, y, teamId, teamId === -1 ? 15 : 30));
-}
-
-function restartGame() {
-    if (isRestarting) return;
-    isRestarting = true;
-    overlay.style.opacity = 1;
-    AudioEngine.restart();
-    setTimeout(init, 1500);
-}
-
-setInterval(() => {
-    if (isRestarting) return;
-    let counts = COLORS.map((_, i) => nodes.filter(n => n.team === i).length);
-    if (Math.max(...counts) / nodes.length >= CONFIG.stagnationThreshold) { restartGame(); return; }
-    for(let i=0; i<7; i++) if (nodes.filter(n => n.team === i).length === 0) spawnBase(i);
-
-    COLORS.forEach((_, id) => {
-        if (id === 0) return;
-        const myNodes = nodes.filter(n => n.team === id);
-        myNodes.forEach(src => {
-            if (src.value > 20 && Math.random() < CONFIG.aiAttackChance) {
-                let targets = nodes.filter(n => n.team !== id);
-                let target = targets[Math.floor(Math.random() * targets.length)];
-                if (target) sendTroops(src, target);
-            }
-        });
-    });
-}, CONFIG.aiAttackInterval);
-
-function sendTroops(src, target) {
-    if (src === target || src.isDying) return;
-    let amt = Math.floor(src.value * 0.6);
-    src.value -= amt;
-    AudioEngine.send();
-    for(let i=0; i<amt; i++) {
-        setTimeout(() => {
-            if (!target.isDying) particles.push(new Particle(src.x, src.y, target, src.team));
-        }, i * 35);
-    }
-}
-
-function gameLoop() {
-    ctx.clearRect(0, 0, width, height);
-    if (selectedNode && touchPos) {
-        ctx.beginPath(); ctx.moveTo(selectedNode.x, selectedNode.y);
-        ctx.lineTo(touchPos.x, touchPos.y);
-        ctx.strokeStyle = COLORS[selectedNode.team]; ctx.lineWidth = 4; ctx.globalAlpha = 0.2; ctx.stroke(); ctx.globalAlpha = 1;
-    }
-    nodes.forEach(n => { n.update(); n.draw(); });
-    particles = particles.filter(p => { p.draw(); return p.update(); });
-    requestAnimationFrame(gameLoop);
-}
-
-const getPos = (e) => {
-    const t = e.touches ? e.touches[0] : e;
-    return { x: t.clientX, y: t.clientY };
-};
-
-canvas.addEventListener('touchstart', (e) => { 
-    e.preventDefault(); 
-    AudioEngine.init();
-    const p = getPos(e);
-    let clicked = nodes.find(n => Math.hypot(n.x - p.x, n.y - p.y) < n.radius + 20);
-    if (clicked && clicked.team === 0) {
-        selectedNode = clicked;
-        AudioEngine.click();
-    }
-});
-canvas.addEventListener('touchmove', (e) => { e.preventDefault(); touchPos = getPos(e); });
-canvas.addEventListener('touchend', () => {
-    if (selectedNode && touchPos) {
-        let target = nodes.find(n => Math.hypot(n.x - touchPos.x, n.y - touchPos.y) < n.radius + 30);
-        if (target && target !== selectedNode) sendTroops(selectedNode, target);
-    }
-    selectedNode = null; touchPos = null;
-});
-
-init(); gameLoop();
-</script>
-</body>
-</html>
-s.team === 0 && now < playerBonusTime) baseSpeed /= 2; 
-        if (now - this.lastRegen > baseSpeed) {
-            if (this.value < 100) this.value++;
-            this.lastRegen = now;
+            _ctx.beginPath(); _ctx.arc(this.x, this.y, r, 0, Math.PI*2);
+            _ctx.fillStyle = this.team === -1 ? _NEU : _CLS[this.team % _CLS.length];
+            _ctx.fill();
+            _ctx.strokeStyle = (_s_nd === this) ? '#333' : 'white';
+            _ctx.lineWidth = 3; _ctx.stroke();
+            _ctx.fillStyle = this.team === -1 ? '#aaa' : 'white';
+            _ctx.font = `bold ${Math.floor(r * 0.5)}px sans-serif`;
+            _ctx.textAlign = 'center';
+            _ctx.fillText(Math.floor(this.val), this.x, this.y + (r * 0.18));
+            _ctx.restore();
         }
     }
-    draw() {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.team === -1 ? NEUTRAL_COLOR : TEAM_COLORS[this.team % TEAM_COLORS.length];
-        if (this.team === 0 && Date.now() < playerBonusTime) {
-            ctx.shadowBlur = 20; ctx.shadowColor = '#3498db';
-        }
-        ctx.fill();
-        ctx.strokeStyle = (selectedNode === this) ? '#333' : 'rgba(0,0,0,0.05)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.restore();
-        ctx.fillStyle = this.team === -1 ? '#636e72' : 'white';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(Math.floor(this.value), this.x, this.y + 6);
-    }
-}
 
-class Anomaly {
-    constructor(x, y) {
-        this.x = x; this.y = y;
-        this.radius = 45;
-        this.life = Date.now() + 8000;
-        this.angle = 0;
-    }
-    draw() {
-        this.angle += 0.05;
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        ctx.strokeStyle = '#2d3436';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 10]);
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * (0.8 + Math.sin(this.angle)*0.2), 0, Math.PI*2);
-        ctx.stroke();
-        ctx.restore();
-    }
-}
-
-class Particle {
-    constructor(x, y, target, teamIndex) {
-        this.x = x; this.y = y; this.target = target;
-        this.team = teamIndex; this.speed = 4;
-    }
-    update() {
-        for(let a of anomalies) {
-            if(Math.hypot(this.x - a.x, this.y - a.y) < a.radius) return false;
-        }
-        const dx = this.target.x - this.x, dy = this.target.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < 5) { this.reach(); return false; }
-        this.x += (dx/dist) * this.speed;
-        this.y += (dy/dist) * this.speed;
-        return true;
-    }
-    reach() {
-        if (this.target.team === this.team) this.target.value++;
-        else {
-            this.target.value--;
-            if (this.target.value <= 0) {
-                if (this.team === 0) {
-                    playerBonusTime = Date.now() + 5000;
-                    playTone(523, 'sine', 0.2, 0.1); // Звук успеха
+    class _Part_X {
+        constructor(x, y, tg, tm) { this.x = x; this.y = y; this.tg = tg; this.tm = tm; }
+        upd() {
+            let dx = this.tg.x - this.x, dy = this.tg.y - this.y;
+            let d = Math.hypot(dx, dy);
+            if (d < this.tg.rad) {
+                if (this.tg.team === this.tm) this.tg.val++;
+                else {
+                    this.tg.val--;
+                    if (this.tg.val <= 0) {
+                        this.tg.team = this.tm; this.tg.val = _c_f_g._c_p_b;
+                        _t_bs[this.tm] = Date.now() + 3000; _A_u_d._cp();
+                    }
                 }
-                this.target.team = this.team; this.target.value = 10;
+                return false;
             }
+            this.x += (dx/d) * _c_f_g._s_p_d;
+            this.y += (dy/d) * _c_f_g._s_p_d;
+            return true;
+        }
+        drw() {
+            _ctx.beginPath(); _ctx.arc(this.x, this.y, 4, 0, Math.PI*2);
+            _ctx.fillStyle = _CLS[this.tm % _CLS.length]; _ctx.fill();
         }
     }
-    draw() {
-        ctx.beginPath(); ctx.arc(this.x, this.y, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = TEAM_COLORS[this.team % TEAM_COLORS.length]; ctx.fill();
+
+    function _init_G() {
+        _is_r = false; _ovl.style.opacity = 0;
+        _w = _cvs.width = window.innerWidth;
+        _h = _cvs.height = window.innerHeight;
+        _nds = []; _pts = [];
+        for(let i=0; i<7; i++) _sp_b(i);
+        for(let i=0; i<4; i++) _sp_b(-1);
     }
-}
 
-function spawnSmartEnemy() {
-    let x, y, tooClose, attempts = 0;
-    do {
-        x = 50 + Math.random() * (width - 100);
-        y = 100 + Math.random() * (height - 200);
-        tooClose = nodes.some(n => Math.hypot(x-n.x, y-n.y) < 90);
-        attempts++;
-    } while (tooClose && attempts < 50);
-
-    if (!tooClose) {
-        const playerTotal = nodes.filter(n => n.team === 0).reduce((s, n) => s + n.value, 0);
-        const activeTeams = new Set(nodes.filter(n => n.team > 0).map(n => n.team));
-        let nextId = 1; while(activeTeams.has(nextId)) nextId++;
-        let startVal = nodes.filter(n => n.team === 0).length > 2 ? Math.floor(playerTotal * 0.7) : 20;
-        nodes.push(new Node(x, y, nextId, Math.max(20, startVal)));
+    function _sp_b(tid) {
+        let x, y, c, a = 0;
+        do {
+            x = 60 + Math.random() * (_w - 120);
+            y = 100 + Math.random() * (_h - 200);
+            c = _nds.some(n => Math.hypot(n.x - x, n.y - y) < 100);
+            a++;
+        } while (c && a < 50);
+        _nds.push(new _Node_X(x, y, tid, tid === -1 ? 15 : 30));
     }
-}
 
-function init() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    nodes = [new Node(width/2, height - 120, 0, 30)];
-    for(let i=0; i<4; i++) spawnNode(-1);
-    spawnSmartEnemy();
-}
+    function _rst_G() {
+        if (_is_r) return;
+        _is_r = true; _ovl.style.opacity = 1;
+        _A_u_d._rs(); setTimeout(_init_G, 1500);
+    }
 
-function spawnNode(team) {
-    let x = 50 + Math.random()*(width-100), y = 100 + Math.random()*(height-200);
-    if(!nodes.some(n => Math.hypot(x-n.x, y-n.y) < 85)) nodes.push(new Node(x, y, team, 10));
-}
+    setInterval(() => {
+        if (_is_r) return;
+        let cts = _CLS.map((_, i) => _nds.filter(n => n.team === i).length);
+        if (Math.max(...cts) / _nds.length >= _c_f_g._s_t_g) { _rst_G(); return; }
+        for(let i=0; i<7; i++) if (_nds.filter(n => n.team === i).length === 0) _sp_b(i);
 
-setInterval(() => { anomalies.push(new Anomaly(Math.random()*width, Math.random()*height)); }, 14000);
-setInterval(() => { if(nodes.filter(n=>n.team===-1).length < 5) spawnNode(-1); }, 7000);
-setInterval(() => { gameLevel++; levelDisplay.innerText = gameLevel; spawnSmartEnemy(); }, 10000);
-
-setInterval(() => {
-    const teams = [...new Set(nodes.map(n => n.team))].filter(t => t > 0);
-    teams.forEach(id => {
-        nodes.filter(n => n.team === id).forEach(src => {
-            if (src.value > 20) {
-                let targets = nodes.filter(n => n.team !== id);
-                targets.sort((a,b) => Math.hypot(a.x-src.x, a.y-src.y) - Math.hypot(b.x-src.x, b.y-src.y));
-                if (targets[0]) sendTroops(src, targets[0]);
-            }
+        _CLS.forEach((_, id) => {
+            if (id === 0) return;
+            _nds.filter(n => n.team === id).forEach(src => {
+                if (src.val > 20 && Math.random() < _c_f_g._a_i_c) {
+                    let tgs = _nds.filter(n => n.team !== id);
+                    let tg = tgs[Math.floor(Math.random() * tgs.length)];
+                    if (tg) _snd_T(src, tg);
+                }
+            });
         });
-    });
-}, 2500);
+    }, _c_f_g._a_i_i);
 
-function sendTroops(from, to) {
-    let amount = Math.floor(from.value * 0.6); from.value -= amount;
-    if (from.team === 0) playTone(150, 'sine', 0.1, 0.05); // Звук запуска
-    for(let i=0; i<amount; i++) setTimeout(() => particles.push(new Particle(from.x, from.y, to, from.team)), i * 50);
-}
-
-function gameLoop() {
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
-    
-    anomalies = anomalies.filter(a => {
-        if(Date.now() < a.life) { a.draw(); return true; }
-        return false;
-    });
-
-    let remaining = playerBonusTime - Date.now();
-    if (remaining > 0) {
-        bonusTimerBar.style.width = (remaining / 5000 * 100) + "%";
-        bonusStatus.innerText = "X2 СКОРОСТЬ";
-    } else {
-        bonusTimerBar.style.width = "0%";
-        bonusStatus.innerText = "НОРМА";
+    function _snd_T(s, t) {
+        if (s === t || s.is_d) return;
+        let amt = Math.floor(s.val * 0.6);
+        s.val -= amt; _A_u_d._sn();
+        for(let i=0; i<amt; i++) {
+            setTimeout(() => { if (!t.is_d) _pts.push(new _Part_X(s.x, s.y, t, s.team)); }, i * 35);
+        }
     }
 
-    if (selectedNode && touchPos) {
-        ctx.beginPath(); ctx.moveTo(selectedNode.x, selectedNode.y);
-        ctx.lineTo(touchPos.x, touchPos.y);
-        ctx.strokeStyle = '#3498db'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    function _loop() {
+        _ctx.clearRect(0, 0, _w, _h);
+        if (_s_nd && _t_ps) {
+            _ctx.beginPath(); _ctx.moveTo(_s_nd.x, _s_nd.y);
+            _ctx.lineTo(_t_ps.x, _t_ps.y);
+            _ctx.strokeStyle = _CLS[_s_nd.team]; _ctx.lineWidth = 4; _ctx.globalAlpha = 0.2; _ctx.stroke(); _ctx.globalAlpha = 1;
+        }
+        _nds.forEach(n => { n.upd(); n.drw(); });
+        _pts = _pts.filter(p => { p.drw(); return p.upd(); });
+        requestAnimationFrame(_loop);
     }
 
-    nodes.forEach(n => { n.update(); n.draw(); });
-    particles = particles.filter(p => { p.draw(); return p.update(); });
-    requestAnimationFrame(gameLoop);
-}
+    const _g_p = (e) => {
+        const t = e.touches ? e.touches[0] : e;
+        return { x: t.clientX, y: t.clientY };
+    };
 
-const getPos = (e) => {
-    const t = e.touches ? e.touches[0] : e;
-    return { x: t.clientX, y: t.clientY };
-};
-canvas.onmousedown = canvas.ontouchstart = (e) => {
-    initAudio();
-    const p = getPos(e);
-    nodes.forEach(n => { if (Math.hypot(p.x-n.x, p.y-n.y) < n.radius + 15 && n.team === 0) selectedNode = n; });
-};
-window.onmousemove = window.ontouchmove = (e) => { if (selectedNode) touchPos = getPos(e); };
-window.onmouseup = window.ontouchend = (e) => {
-    if (selectedNode && touchPos) nodes.forEach(n => { if (Math.hypot(touchPos.x-n.x, touchPos.y-n.y) < n.radius + 15) sendTroops(selectedNode, n); });
-    selectedNode = null; touchPos = null;
-};
-init(); gameLoop();
+    _cvs.addEventListener('touchstart', (e) => { 
+        _A_u_d.init();
+        const p = _g_p(e);
+        let cl = _nds.find(n => Math.hypot(n.x - p.x, n.y - p.y) < n.rad + 20);
+        if (cl && cl.team === 0) { _s_nd = cl; _A_u_d._cl(); }
+    });
+    _cvs.addEventListener('touchmove', (e) => { _t_ps = _g_p(e); });
+    _cvs.addEventListener('touchend', () => {
+        if (_s_nd && _t_ps) {
+            let tg = _nds.find(n => Math.hypot(n.x - _t_ps.x, n.y - _t_ps.y) < n.rad + 30);
+            if (tg && tg !== _s_nd) _snd_T(_s_nd, tg);
+        }
+        _s_nd = null; _t_ps = null;
+    });
+
+    _init_G(); _loop();
+    window.addEventListener('resize', _init_G);
+})();
 </script>
-</body>
-
-
-
-        
 <script src="https://dmamax.netlify.app/legal-module.js"></script>
-</html>
 
+</body>
+</html>
