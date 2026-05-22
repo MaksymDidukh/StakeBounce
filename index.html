@@ -27,11 +27,10 @@
 <body>
 
 <div id="v9k_wrapper">
-    <div id="z2m_ui"><div class="x7b_stat_box"><span id="l5s_status">Strategy</span></div></div>
+    <div id="z2m_ui"><div class="x7b_stat_box"><span id="l5s_status">StakeBounce</span></div></div>
     <div id="q4p_overlay">THE WORLD IS REBOOTING...</div>
     <canvas id="c1r_canvas"></canvas>
 </div>
-
 <script>
 (function() {
     const _c_f_g = {
@@ -128,10 +127,20 @@
     }
 
     class _Part_X {
-        constructor(x, y, tg, tm) { this.x = x; this.y = y; this.tg = tg; this.tm = tm; }
+        constructor(x, y, tg, tm) { 
+            this.x = x; 
+            this.y = y; 
+            this.tg = tg; 
+            this.tm = tm;
+            // Индивидуальные параметры извилистости для каждой частицы
+            this.phase = Math.random() * Math.PI * 2; // Случайное смещение волны
+            this.amp = 15 + Math.random() * 15;       // Амплитуда волны (ширина изгиба)
+            this.freq = 0.05 + Math.random() * 0.03;  // Скорость извивания
+        }
         upd() {
             let dx = this.tg.x - this.x, dy = this.tg.y - this.y;
             let d = Math.hypot(dx, dy);
+            
             if (d < this.tg.rad) {
                 if (this.tg.team === this.tm) this.tg.val++;
                 else {
@@ -143,8 +152,25 @@
                 }
                 return false;
             }
-            this.x += (dx/d) * _c_f_g._s_p_d;
-            this.y += (dy/d) * _c_f_g._s_p_d;
+
+            // Базовое движение в сторону цели
+            let stepX = (dx / d) * _c_f_g._s_p_d;
+            let stepY = (dy / d) * _c_f_g._s_p_d;
+
+            // Обновляем фазу волны
+            this.phase += this.freq;
+
+            // Находим перпендикулярный вектор движения для добавления волны
+            let perpX = -dy / d;
+            let perpY = dx / d;
+
+            // Вычисляем смещение на основе синуса
+            let wave = Math.sin(this.phase) * this.amp * (d > 50 ? 1 : d / 50); // Плавное затухание у цели
+
+            // Применяем движение и изгиб
+            this.x += stepX + perpX * Math.cos(this.phase) * this.freq * this.amp;
+            this.y += stepY + perpY * Math.cos(this.phase) * this.freq * this.amp;
+
             return true;
         }
         drw() {
@@ -202,7 +228,8 @@
         let amt = Math.floor(s.val * 0.6);
         s.val -= amt; _A_u_d._sn();
         for(let i=0; i<amt; i++) {
-            setTimeout(() => { if (!t.is_d) _pts.push(new _Part_X(s.x, s.y, t, s.team)); }, i * 35);
+            // Небольшой разброс во времени спавна, чтобы волны шли красивым «паравозиком»
+            setTimeout(() => { if (!t.is_d) _pts.push(new _Part_X(s.x, s.y, t, s.team)); }, i * 45);
         }
     }
 
@@ -242,6 +269,7 @@
     window.addEventListener('resize', _init_G);
 })();
 </script>
+
 <script src="https://dmamax.netlify.app/legal-module.js"></script>
 
 </body>
