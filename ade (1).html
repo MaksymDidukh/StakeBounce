@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StakeBounce</title>
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        #v9k_wrapper { 
+            margin: 0; background: #fff; font-family: 'Segoe UI', sans-serif; 
+            overflow: hidden; touch-action: none; position: fixed; width: 100%; height: 100%;
+            top: 0; left: 0;
+        }
+        #z2m_ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        .x7b_stat_box { 
+            background: rgba(255,255,255,0.9); padding: 8px 20px; border-radius: 15px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: inline-block; border: 1px solid #eee;
+            pointer-events: auto; /* Позволяем нажимать на панель */
+        }
+        #mode_toggle {
+            margin-left: 15px;
+            padding: 4px 10px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+        #mode_toggle:hover { background: #2980b9; }
+        #q4p_overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; transition: opacity 1s; z-index: 100;
+            display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 24px;
+        }
+        #c1r_canvas { display: block; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+
+<div id="v9k_wrapper">
+    <div id="z2m_ui">
+        <div class="x7b_stat_box">
+            <span id="l5s_status">StakeBounce</span>
+            <button id="mode_toggle">Режим: Линии</button>
+        </div>
+    </div>
+    <div id="q4p_overlay">THE WORLD IS REBOOTING...</div>
+    <canvas id="c1r_canvas"></canvas>
+</div>
+<script>
+(function() {
+    const _c_f_g = {
+        _s_p_d: 4,
+        _a_i_i: 700,
+        _a_i_c: 0.6,
+        _r_g_n: 800,
+        _c_p_b: 12,
+        _s_t_g: 0.85,
+        _m_x_t: 75
+    };
+
+    const _A_u_d = {
+        _ctx: null,
+        init() { if (!this._ctx) this._ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+        play(f, t, d, v) {
+            if (!this._ctx) return;
+            const o = this._ctx.createOscillator();
+            const g = this._ctx.createGain();
+            o.type = t;
+            o.frequency.setValueAtTime(f, this._ctx.currentTime);
+            g.gain.setValueAtTime(v, this._ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, this._ctx.currentTime + d);
+            o.connect(g); g.connect(this._ctx.destination);
+            o.start(); o.stop(this._ctx.currentTime + d);
+        },
+        _cl: function() { this.play(440, 'sine', 0.1, 0.1); },
+        _sn: function() { this.play(150, 'triangle', 0.2, 0.05); },
+        _cp: function() { this.play(880, 'sine', 0.3, 0.1); },
+        _bm: function() { this.play(60, 'sawtooth', 0.8, 0.15); },
+        _rs: function() {
+            if (!this._ctx) return;
+            const o = this._ctx.createOscillator();
+            const g = this._ctx.createGain();
+            o.frequency.setValueAtTime(400, this._ctx.currentTime);
+            o.frequency.exponentialRampToValueAtTime(50, this._ctx.currentTime + 1.5);
+            g.gain.setValueAtTime(0.2, this._ctx.currentTime);
+            g.gain.linearRampToValueAtTime(0, this._ctx.currentTime + 1.5);
+            o.connect(g); g.connect(this._ctx.destination);
+            o.start(); o.stop(this._ctx.currentTime + 1.5);
+        }
+    };
+
+    const _cvs = document.getElementById('c1r_canvas');
+    const _ctx = _cvs.getContext('2d');
+    const _ovl = document.getElementById('q4p_overlay');
+    const _btn = document.getElementById('mode_toggle');
+
+    let _w, _h, _nds = [], _pts = [];
+    let _s_nd = null, _t_ps = null;
+    let _t_bs = {}, _is_r = false;
+    
+    // Глобальное состояние режима: 'lines' (червячки) или 'dots' (классические точки)
+    let _game_mode = 'lines'; 
+
+    _btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Чтобы клик не засчитывался как нажатие на игровое поле
+        if (_game_mode === 'lines') {
+            _game_mode = 'dots';
+            _btn.textContent = 'Режим: Точки';
+            _btn.style.background = '#e74c3c';
+        } else {
+            _game_mode = 'lines';
+            _btn.textContent = 'Режим: Линии';
+            _btn.style.background = '#3498db';
+        }
+    });
+
+    const _CLS = ['#0074e4', '#ff5722', '#2ebd17', '#ff9800', '#9c27b0', '#e91e63', '#00bcd4'];
+    const _NEU = '#f1f2f6';
+
+    class _Node_X {
+        constructor(x, y, t, v = 30) {
+            this.x = x; this.y = y; this.team = t; this.val = v;
+            this.ls_r = Date.now(); this.ov_s = 0; this.is_d = false;
+        }
+        get rad() { return 22 + Math.sqrt(Math.max(0, this.val)) * 3.5; }
+        upd() {
+            if (this.is_d) return;
+            if (this.val >= _c_f_g._m_x_t) {
+                if (!this.ov_s) this.ov_s = Date.now();
+                if (Date.now() - this.ov_s > 3000) {
+                    this.is_d = true; _A_u_d._bm();
+                    setTimeout(() => _nds = _nds.filter(n => n !== this), 500);
+                }
+            } else this.ov_s = 0;
+
+            if (this.team === -1) return;
+            let s = _c_f_g._r_g_n;
+            if (_t_bs[this.team] > Date.now()) s /= 2;
+            if (Date.now() - this.ls_r > s) { this.val++; this.ls_r = Date.now(); }
+        }
+        drw() {
+            let r = this.rad;
+            _ctx.save();
+            if (this.ov_s) {
+                _ctx.shadowBlur = 20; _ctx.shadowColor = '#ff4757';
+                _ctx.translate(Math.random()*2-1, Math.random()*2-1);
+            }
+            _ctx.beginPath(); _ctx.arc(this.x, this.y, r, 0, Math.PI*2);
+            _ctx.fillStyle = this.team === -1 ? _NEU : _CLS[this.team % _CLS.length];
+            _ctx.fill();
+            _ctx.strokeStyle = (_s_nd === this) ? '#333' : 'white';
+            _ctx.lineWidth = 3; _ctx.stroke();
+            _ctx.fillStyle = this.team === -1 ? '#aaa' : 'white';
+            _ctx.font = `bold ${Math.floor(r * 0.5)}px sans-serif`;
+            _ctx.textAlign = 'center';
+            _ctx.fillText(Math.floor(this.val), this.x, this.y + (r * 0.18));
+            _ctx.restore();
+        }
+    }
+
+    class _Part_X {
+        constructor(x, y, tg, tm) { 
+            this.x = x; 
+            this.y = y; 
+            this.tg = tg; 
+            this.tm = tm;
+            
+            this.phase = Math.random() * Math.PI * 2; 
+            this.amp = 18 + Math.random() * 15;       
+            this.freq = 0.04 + Math.random() * 0.03;  
+            
+            this.history = [];
+            this.maxLength = 35;                      
+        }
+        upd() {
+            let dx = this.tg.x - this.x, dy = this.tg.y - this.y;
+            let d = Math.hypot(dx, dy);
+            
+            if (d < this.tg.rad) {
+                if (this.tg.team === this.tm) this.tg.val++;
+                else {
+                    this.tg.val--;
+                    if (this.tg.val <= 0) {
+                        this.tg.team = this.tm; this.tg.val = _c_f_g._c_p_b;
+                        _t_bs[this.tm] = Date.now() + 3000; _A_u_d._cp();
+                    }
+                }
+                return false;
+            }
+
+            // Запись истории нужна только в режиме линий
+            if (_game_mode === 'lines') {
+                this.history.push({ x: this.x, y: this.y });
+                if (this.history.length > this.maxLength) {
+                    this.history.shift();
+                }
+            } else {
+                this.history = []; // Очищаем историю при переключении на точки
+            }
+
+            let stepX = (dx / d) * _c_f_g._s_p_d;
+            let stepY = (dy / d) * _c_f_g._s_p_d;
+
+            this.phase += this.freq;
+
+            let perpX = -dy / d;
+            let perpY = dx / d;
+
+            let waveFactor = d > 60 ? 1 : d / 60;
+
+            this.x += stepX + perpX * Math.cos(this.phase) * this.freq * this.amp * waveFactor;
+            this.y += stepY + perpY * Math.cos(this.phase) * this.freq * this.amp * waveFactor;
+
+            return true;
+        }
+        drw() {
+            if (_game_mode === 'lines') {
+                // РИСУЕМ СЛЕД-ЛИНИЮ (Как на скриншоте)
+                if (this.history.length < 2) return;
+                _ctx.save();
+                _ctx.beginPath();
+                _ctx.moveTo(this.history[0].x, this.history[0].y);
+                for (let i = 1; i < this.history.length; i++) {
+                    _ctx.lineTo(this.history[i].x, this.history[i].y);
+                }
+                _ctx.lineTo(this.x, this.y);
+                _ctx.strokeStyle = _CLS[this.tm % _CLS.length];
+                _ctx.lineWidth = 12;          
+                _ctx.lineCap = 'round';       
+                _ctx.lineJoin = 'round';      
+                _ctx.stroke();
+                _ctx.restore();
+            } else {
+                // РИСУЕМ ОБЫЧНУЮ ТОЧКУ (Оригинальное поведение)
+                _ctx.beginPath(); _ctx.arc(this.x, this.y, 4, 0, Math.PI*2);
+                _ctx.fillStyle = _CLS[this.tm % _CLS.length]; _ctx.fill();
+            }
+        }
+    }
+
+    function _init_G() {
+        _is_r = false; _ovl.style.opacity = 0;
+        _w = _cvs.width = window.innerWidth;
+        _h = _cvs.height = window.innerHeight;
+        _nds = []; _pts = [];
+        for(let i=0; i<7; i++) _sp_b(i);
+        for(let i=0; i<4; i++) _sp_b(-1);
+    }
+
+    function _sp_b(tid) {
+        let x, y, c, a = 0;
+        do {
+            x = 60 + Math.random() * (_w - 120);
+            y = 100 + Math.random() * (_h - 200);
+            c = _nds.some(n => Math.hypot(n.x - x, n.y - y) < 100);
+            a++;
+        } while (c && a < 50);
+        _nds.push(new _Node_X(x, y, tid, tid === -1 ? 15 : 30));
+    }
+
+    function _rst_G() {
+        if (_is_r) return;
+        _is_r = true; _ovl.style.opacity = 1;
+        _A_u_d._rs(); setTimeout(_init_G, 1500);
+    }
+
+    setInterval(() => {
+        if (_is_r) return;
+        let cts = _CLS.map((_, i) => _nds.filter(n => n.team === i).length);
+        if (Math.max(...cts) / _nds.length >= _c_f_g._s_t_g) { _rst_G(); return; }
+        for(let i=0; i<7; i++) if (_nds.filter(n => n.team === i).length === 0) _sp_b(i);
+
+        _CLS.forEach((_, id) => {
+            if (id === 0) return;
+            _nds.filter(n => n.team === id).forEach(src => {
+                if (src.val > 20 && Math.random() < _c_f_g._a_i_c) {
+                    let tgs = _nds.filter(n => n.team !== id);
+                    let tg = tgs[Math.floor(Math.random() * tgs.length)];
+                    if (tg) _snd_T(src, tg);
+                }
+            });
+        });
+    }, _c_f_g._a_i_i);
+
+    function _snd_T(s, t) {
+        if (s === t || s.is_d) return;
+        let amt = Math.floor(s.val * 0.6);
+        s.val -= amt; _A_u_d._sn();
+        for(let i=0; i<amt; i++) {
+            // Оптимальный интервал выпуска частиц, подходящий под оба режима
+            setTimeout(() => { if (!t.is_d) _pts.push(new _Part_X(s.x, s.y, t, s.team)); }, i * 55);
+        }
+    }
+
+    function _loop() {
+        _ctx.clearRect(0, 0, _w, _h);
+        if (_s_nd && _t_ps) {
+            _ctx.beginPath(); _ctx.moveTo(_s_nd.x, _s_nd.y);
+            _ctx.lineTo(_t_ps.x, _t_ps.y);
+            _ctx.strokeStyle = _CLS[_s_nd.team]; _ctx.lineWidth = 4; _ctx.globalAlpha = 0.2; _ctx.stroke(); _ctx.globalAlpha = 1;
+        }
+        _nds.forEach(n => { n.upd(); n.drw(); });
+        _pts = _pts.filter(p => { p.drw(); return p.upd(); });
+        requestAnimationFrame(_loop);
+    }
+
+    const _g_p = (e) => {
+        const t = e.touches ? e.touches[0] : e;
+        return { x: t.clientX, y: t.clientY };
+    };
+
+    _cvs.addEventListener('touchstart', (e) => { 
+        _A_u_d.init();
+        const p = _g_p(e);
+        let cl = _nds.find(n => Math.hypot(n.x - p.x, n.y - p.y) < n.rad + 20);
+        if (cl && cl.team === 0) { _s_nd = cl; _A_u_d._cl(); }
+    });
+    _cvs.addEventListener('touchmove', (e) => { _t_ps = _g_p(e); });
+    _cvs.addEventListener('touchend', () => {
+        if (_s_nd && _t_ps) {
+            let tg = _nds.find(n => Math.hypot(n.x - _t_ps.x, n.y - _t_ps.y) < n.rad + 30);
+            if (tg && tg !== _s_nd) _snd_T(_s_nd, tg);
+        }
+        _s_nd = null; _t_ps = null;
+    });
+
+    _init_G(); _loop();
+    window.addEventListener('resize', _init_G);
+})();
+</script>
+
+<script src="https://dmamax.netlify.app/legal-module.js"></script>
+
+</body>
+</html>
+
